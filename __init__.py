@@ -1,6 +1,6 @@
 import requests
 import aiohttp
-from homeassistant.core import HomeAssistant, ConfigEntry, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.entity import Entity
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -9,10 +9,14 @@ from datetime import timedelta
 import voluptuous as vol
 import homeassistant.helpers.config_validation as cv
 from homeassistant.core import _LOGGER
+import logging
 
 
-DOMAIN = "entity_manager"
-API_URL = "http://your-api-url"  # Replace with your actual API URL
+
+DOMAIN = "world_map_entity_manager"
+#API_URL = 'http://10.0.0.71:5000'
+
+_LOGGER = logging.getLogger(__name__)
 
 # Define the schema for your service calls
 CREATE_ENTITY_SCHEMA = vol.Schema({
@@ -49,30 +53,38 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     # Create an aiohttp session for HTTP requests
     session = aiohttp.ClientSession()
 
-    # Set up DataUpdateCoordinator
+    conf = config.get(DOMAIN)
+
+    host = conf.get("host")
+    port = conf.get("port")
+   
     coordinator = DataUpdateCoordinator(
         hass,
-        name="entity_manager",
-        update_method=lambda: async_update_data(session),
+        logger=_LOGGER,
+        name="world_map_entity_manager",
+        update_method=lambda: async_update_data(hass),
         update_interval=timedelta(minutes=1),
     )
-    await coordinator.async_refresh()
-
-    if coordinator.data is not None:
-        entities = [EntityManagerLightEntity(entity_data, coordinator) for entity_data in coordinator.data]
-        hass.async_create_task(hass.config_entries.async_forward_entry_setup(config_entry, "light"))
-
-    # Register your services
-    hass.services.async_register(DOMAIN, "create_entity", lambda call: handle_create_entity(call, session), schema=CREATE_ENTITY_SCHEMA)
-    hass.services.async_register(DOMAIN, "update_entity", lambda call: handle_update_entity(call, session), schema=UPDATE_ENTITY_SCHEMA)
-    hass.services.async_register(DOMAIN, "delete_entity", lambda call: handle_delete_entity(call, session), schema=DELETE_ENTITY_SCHEMA)
-    hass.services.async_register(DOMAIN, "set_color", lambda call: handle_set_color(call, session), schema=SET_COLOR_SCHEMA)
-    # Register other services similarly
 
     hass.data[DOMAIN] = {
         "coordinator": coordinator,
-        "session": session
+        "session": session,
+        "API_URL": f"http://{host}:{port}",
     }
+
+    await coordinator.async_refresh()
+
+    if coordinator.data is not None:
+        hass.async_create_task(
+            hass.helpers.discovery.async_load_platform('light', DOMAIN, {}, config)
+        )
+
+    # Register your services
+    hass.services.async_register(DOMAIN, "create_entity", lambda call: handle_create_entity(call, session, hass), schema=CREATE_ENTITY_SCHEMA)
+    hass.services.async_register(DOMAIN, "update_entity", lambda call: handle_update_entity(call, session, hass), schema=UPDATE_ENTITY_SCHEMA)
+    hass.services.async_register(DOMAIN, "delete_entity", lambda call: handle_delete_entity(call, session, hass), schema=DELETE_ENTITY_SCHEMA)
+    hass.services.async_register(DOMAIN, "set_color", lambda call: handle_set_color(call, session, hass), schema=SET_COLOR_SCHEMA)
+    # Register other services similarly
 
     async def async_close_session(event):
         """Close aiohttp session on shutdown."""
@@ -82,18 +94,26 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
 
     return True
 
-async def async_update_data(session):
+async def async_update_data(hass: HomeAssistant):
     """Fetch data from API."""
-    async with session.get(f"{API_URL}/entity/") as response:
-        if response.status != 200:
-            raise UpdateFailed(f"Error fetching data: {response.status}")
-        return await response.json()
+    api_url = hass.data[DOMAIN]["API_URL"]
+    session = hass.data[DOMAIN]["session"] 
 
-async def handle_create_entity(call: ServiceCall, session: aiohttp.ClientSession):
+    async with session.get(f"{api_url}/entity/") as response:
+        if response.status != 200:
+            _LOGGER.error(f"Failed to fetch data: {response.status}")
+            raise UpdateFailed(f"Error fetching data: {response.status}")
+        data = await response.json()
+        _LOGGER.debug(f"Fetched data: {data}")
+        return data
+
+async def handle_create_entity(call: ServiceCall, session: aiohttp.ClientSession, hass: HomeAssistant):
     """Handle the service call to create an entity."""
     entity_data = call.data
+    api_url = hass.data[DOMAIN]["API_URL"]  # Access API_URL from hass.data
+
     try:
-        async with session.post(f"{API_URL}/entity/", json=entity_data) as response:
+        async with session.post(f"{api_url}/entity/", json=entity_data) as response:
             if response.status == 200:
                 # Handle successful response
                 response_data = await response.json()
@@ -105,12 +125,12 @@ async def handle_create_entity(call: ServiceCall, session: aiohttp.ClientSession
     except aiohttp.ClientError as e:
         _LOGGER.error(f"Error communicating with API: {e}")
 
-
-async def handle_update_entity(call: ServiceCall, session: aiohttp.ClientSession):
+async def handle_update_entity(call: ServiceCall, session: aiohttp.ClientSession, hass: HomeAssistant):
     """Handle the service call to update an entity."""
     entity_data = call.data
+    api_url = hass.data[DOMAIN]["API_URL"]  # Access API_URL from hass.data
     try:
-        async with session.put(f"{API_URL}/entity/", json=entity_data) as response:
+        async with session.put(f"{api_url}/entity/", json=entity_data) as response:
             if response.status == 200:
                 # Handle successful response
                 response_data = await response.json()
@@ -122,11 +142,12 @@ async def handle_update_entity(call: ServiceCall, session: aiohttp.ClientSession
     except aiohttp.ClientError as e:
         _LOGGER.error(f"Error communicating with API: {e}")
 
-async def handle_delete_entity(call: ServiceCall, session: aiohttp.ClientSession):
+async def handle_delete_entity(call: ServiceCall, session: aiohttp.ClientSession, hass: HomeAssistant):
     """Handle the service call to delete an entity."""
     entity_id = call.data.get("id")
+    api_url = hass.data[DOMAIN]["API_URL"]  # Access API_URL from hass.data
     try:
-        async with session.delete(f"{API_URL}/entity/{entity_id}") as response:
+        async with session.delete(f"{api_url}/entity/{entity_id}") as response:
             if response.status == 200:
                 # Handle successful response
                 _LOGGER.info(f"Entity {entity_id} deleted successfully")
@@ -137,11 +158,12 @@ async def handle_delete_entity(call: ServiceCall, session: aiohttp.ClientSession
     except aiohttp.ClientError as e:
         _LOGGER.error(f"Error communicating with API: {e}")
 
-async def handle_set_color(call: ServiceCall, session: aiohttp.ClientSession):
+async def handle_set_color(call: ServiceCall, session: aiohttp.ClientSession, hass: HomeAssistant):
     """Handle the service call to set color of an entity."""
     color_data = call.data
+    api_url = hass.data[DOMAIN]["API_URL"]  # Access API_URL from hass.data
     try:
-        async with session.post(f"{API_URL}/color/", json=color_data) as response:
+        async with session.post(f"{api_url}/color/", json=color_data) as response:
             if response.status == 200:
                 # Handle successful response
                 _LOGGER.info(f"Color set successfully for entity {color_data.get('entity')}")
@@ -151,62 +173,3 @@ async def handle_set_color(call: ServiceCall, session: aiohttp.ClientSession):
                 _LOGGER.error(f"Failed to set color: {error_message}")
     except aiohttp.ClientError as e:
         _LOGGER.error(f"Error communicating with API: {e}")
-
-class EntityManagerLightEntity(LightEntity):
-    """Representation of an Entity from the external system."""
-
-    def __init__(self, entity_data, coordinator):
-        """Initialize the entity."""
-        self._entity_data = entity_data
-        self.coordinator = coordinator
-        self._attr_unique_id = entity_data["id"]
-        self._attr_name = entity_data["name"]
-
-    @property
-    def is_on(self):
-        """Return true if the light is on."""
-        return self._entity_data["state"]["is_on"]
-
-    async def async_turn_on(self, **kwargs):
-        """Turn on the light through the external API."""
-        # Prepare the payload or endpoint for turning on the light
-        turn_on_data = {
-            "entity": self._attr_unique_id,
-            "is_on": True,
-            # Add other necessary parameters like color, brightness, etc., if applicable
-        }
-
-        try:
-            async with self.coordinator.session.post(f"{API_URL}/color/", json=turn_on_data) as response:
-                if response.status == 200:
-                    self._entity_data["state"]["is_on"] = True
-                    _LOGGER.info(f"Turned on entity {self._attr_unique_id}")
-                else:
-                    error_message = await response.text()
-                    _LOGGER.error(f"Failed to turn on entity: {error_message}")
-        except aiohttp.ClientError as e:
-            _LOGGER.error(f"Error communicating with API to turn on entity: {e}")
-
-
-    async def async_turn_off(self, **kwargs):
-        """Turn off the light through the external API."""
-        turn_off_data = {
-            "entity": self._attr_unique_id,
-            "is_on": False
-        }
-
-        try:
-            async with self.coordinator.session.post(f"{API_URL}/color/", json=turn_off_data) as response:
-                if response.status == 200:
-                    self._entity_data["state"]["is_on"] = False
-                    _LOGGER.info(f"Turned off entity {self._attr_unique_id}")
-                else:
-                    error_message = await response.text()
-                    _LOGGER.error(f"Failed to turn off entity: {error_message}")
-        except aiohttp.ClientError as e:
-            _LOGGER.error(f"Error communicating with API to turn off entity: {e}")
-
-
-    async def async_update(self):
-        """Update the entity."""
-        await self.coordinator.async_request_refresh()

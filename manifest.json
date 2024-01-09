@@ -1,5 +1,5 @@
 {
-    "domain": "world_map",
+    "domain": "world_map_entity_manager",
     "name": "World Map",
     "documentation": "https://www.example.com",
     "dependencies": [],
