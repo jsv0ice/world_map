@@ -1,0 +1,10 @@
+{
+    "domain": "world_map",
+    "name": "World Map",
+    "documentation": "https://www.example.com",
+    "dependencies": [],
+    "codeowners": ["@jsv0ice"],
+    "requirements": [],
+    "version": "1.0.0"
+  }
+  

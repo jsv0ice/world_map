@@ -1,0 +1,63 @@
+create_entity:
+  description: Create a new entity.
+  fields:
+    name:
+      description: The name of the entity.
+      example: "Living Room Light"
+    start_addr:
+      description: The starting address of the entity.
+      example: 1
+    end_addr:
+      description: The ending address of the entity.
+      example: 10
+    parent_id:
+      description: The ID of the parent entity, if any.
+      example: 2
+
+update_entity:
+  description: Update an existing entity.
+  fields:
+    id:
+      description: The ID of the entity to be updated.
+      example: 1
+    name:
+      description: The new name of the entity.
+      example: "Kitchen Light"
+    start_addr:
+      description: The new starting address of the entity.
+      example: 11
+    end_addr:
+      description: The new ending address of the entity.
+      example: 20
+    parent_id:
+      description: The ID of the new parent entity, if any.
+      example: 3
+
+delete_entity:
+  description: Delete an existing entity.
+  fields:
+    id:
+      description: The ID of the entity to be deleted.
+      example: 1
+
+set_color:
+  description: Set the color for a specified entity and its children.
+  fields:
+    entity:
+      description: The ID of the entity.
+      example: 1
+    red:
+      description: Red color value (0-255).
+      example: 255
+    green:
+      description: Green color value (0-255).
+      example: 100
+    blue:
+      description: Blue color value (0-255).
+      example: 100
+    brightness:
+      description: Brightness value (0-100).
+      example: 50
+    is_on:
+      description: State of the entity.
+      example: true
